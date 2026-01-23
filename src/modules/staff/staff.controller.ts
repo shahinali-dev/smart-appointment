@@ -1,5 +1,6 @@
 import { Router } from "express";
 import httpStatus from "http-status";
+import { isAuth } from "../../middleware/is_auth";
 import validateRequest from "../../middleware/validate_request.middleware";
 import catchAsync from "../../utils/catch_async.utils";
 import sendResponse from "../../utils/send_response.utils";
