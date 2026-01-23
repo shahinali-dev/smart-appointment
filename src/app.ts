@@ -18,7 +18,7 @@ app.use(cors(corsOptions));
 app.use(router);
 
 app.get("/", (req: Request, res: Response) => {
-  res.send("Hello World!");
+  res.send("Welcome to Smart Appointment API");
 });
 
 app.use(notFound);

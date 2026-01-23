@@ -7,7 +7,7 @@ async function main() {
     await mongoose.connect(config.DB as string);
 
     app.listen(config.PORT, () => {
-      console.log(`Express app is listening on port ${config.PORT}`);
+      console.log(`Smart Appointment app is listening on port ${config.PORT}`);
     });
   } catch (error) {
     console.log(error);

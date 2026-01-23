@@ -1,11 +1,8 @@
 /* eslint-disable no-unused-vars */
 
-import { Role } from "./user.enum";
-
 export interface IUser {
   name: string;
   email: string;
-  role: Role;
   password: string;
   avatar?: string;
 }
@@ -19,7 +16,6 @@ export interface IAuthUser {
   _id: string;
   name: string;
   email: string;
-  role: string;
   provider: string;
   createdAt: string;
   updatedAt: string;
