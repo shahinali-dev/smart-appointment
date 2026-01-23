@@ -19,7 +19,7 @@ export class AuthService {
 
     const isMatch = await passwordUtils.compare(
       payload.password as string,
-      existingUser.password as string
+      existingUser.password as string,
     );
 
     if (!isMatch) {
@@ -31,19 +31,18 @@ export class AuthService {
     const jwtPayload = {
       _id: rest._id,
       email: rest.email,
-      role: rest.role,
     };
 
     const accessToken = createToken(
       jwtPayload,
       config.JWT_ACCESS_SECRET as string,
-      config.JWT_ACCESS_EXPIRE_IN as string
+      config.JWT_ACCESS_EXPIRE_IN as string,
     );
 
     const refreshToken = createToken(
       jwtPayload,
       config.JWT_REFRESH_SECRET as string,
-      config.JWT_REFRESH_EXPIRE_IN as string
+      config.JWT_REFRESH_EXPIRE_IN as string,
     );
 
     return { user: rest, accessToken, refreshToken };
