@@ -32,9 +32,8 @@ router.post(
       statusCode: httpStatus.OK,
       message: "User logged in successfully",
       data: user.user,
-      token: user.accessToken,
     });
-  })
+  }),
 );
 
 router.get(
@@ -49,7 +48,7 @@ router.get(
       message: "User info fetched successfully",
       data: user,
     });
-  })
+  }),
 );
 
 router.post(
@@ -62,7 +61,7 @@ router.post(
       statusCode: httpStatus.OK,
       message: "User logged out successfully",
     });
-  })
+  }),
 );
 
 export const authRoute = router;
