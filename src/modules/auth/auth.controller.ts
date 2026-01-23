@@ -54,8 +54,8 @@ router.get(
 router.post(
   "/signout",
   catchAsync(async (req, res) => {
-    res.clearCookie("access-token");
-    res.clearCookie("refresh-token");
+    res.clearCookie("accessToken");
+    res.clearCookie("refreshToken");
     res.status(httpStatus.OK).json({
       success: true,
       statusCode: httpStatus.OK,
