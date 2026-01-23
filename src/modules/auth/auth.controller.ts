@@ -13,14 +13,14 @@ router.post(
     const userData = req.body;
     const user = await authService.signIn(userData);
 
-    res.cookie("access-token", user.accessToken, {
+    res.cookie("accessToken", user.accessToken, {
       httpOnly: true,
       secure: config.NODE_ENV === "production",
       sameSite: "strict",
       maxAge: 1 * 24 * 60 * 60 * 1000,
     });
 
-    res.cookie("refresh-token", user.refreshToken, {
+    res.cookie("refreshToken", user.refreshToken, {
       httpOnly: true,
       secure: config.NODE_ENV === "production",
       sameSite: "strict",

@@ -4,7 +4,7 @@ import { z } from "zod";
 dotenv.config();
 
 const envSchema = z.object({
-  DB: z.string().min(1, "DB connection string is required"),
+  DB_URL: z.string().min(1, "DB connection string is required"),
   PORT: z.string().min(1, "PORT is required"),
   NODE_ENV: z
     .enum(["development", "production", "test"])
@@ -29,7 +29,7 @@ if (!parsed.success) {
 const env = parsed.data;
 
 export default {
-  DB: env.DB,
+  DB: env.DB_URL,
   PORT: env.PORT,
   NODE_ENV: env.NODE_ENV,
   SALT_ROUNDS: env.SALT_ROUNDS,
