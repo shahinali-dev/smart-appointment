@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { activityLogRoute } from "../modules/activity-log/activity_log.controller";
 import { appointmentRoute } from "../modules/appointment/appointment.controller";
 import { authRoute } from "../modules/auth/auth.controller";
 import { serviceRoute } from "../modules/service/service.controller";
@@ -28,6 +29,10 @@ const moduleRoutes = [
   {
     path: "/v1/appointment",
     route: appointmentRoute,
+  },
+  {
+    path: "/v1/activity-log",
+    route: activityLogRoute,
   },
 ];
 
