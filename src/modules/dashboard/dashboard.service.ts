@@ -1,4 +1,4 @@
-import { activityLogService } from "../activity-log/activity-log.service";
+import { activityLogService } from "../activity-log/activity_log.service";
 import { AppointmentStatus } from "../appointment/appointment.enum";
 import AppointmentModel from "../appointment/appointment.model";
 import { AvailabilityStatus } from "../staff/staff.enum";

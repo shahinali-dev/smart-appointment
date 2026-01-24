@@ -2,6 +2,7 @@ import { Router } from "express";
 import { activityLogRoute } from "../modules/activity-log/activity_log.controller";
 import { appointmentRoute } from "../modules/appointment/appointment.controller";
 import { authRoute } from "../modules/auth/auth.controller";
+import { dashboardRoute } from "../modules/dashboard/dashboard.controller";
 import { serviceRoute } from "../modules/service/service.controller";
 import { staffRoute } from "../modules/staff/staff.controller";
 import { userRoute } from "../modules/user/user.controller";
@@ -33,6 +34,10 @@ const moduleRoutes = [
   {
     path: "/v1/activity-log",
     route: activityLogRoute,
+  },
+  {
+    path: "/v1/dashboard",
+    route: dashboardRoute,
   },
 ];
 
