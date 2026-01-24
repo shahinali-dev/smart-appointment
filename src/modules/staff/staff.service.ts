@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { AppError } from "../../errors/app_error";
 import QueryBuilder from "../../utils/query_builder.utils";
 import { AvailabilityStatus } from "./staff.enum";
+import StaffModel from "./staff.model";
 import { ICreateStaff, IUpdateStaff } from "./staff.validation";
 
 export class StaffService {
