@@ -2,6 +2,11 @@ import { HydratedDocument, model, Query, Schema } from "mongoose";
 import { ServiceDuration, ServiceType } from "./service.enum";
 import { IService } from "./service.interface";
 
+// Get only numeric values from ServiceDuration enum
+const durationValues = Object.values(ServiceDuration).filter(
+  (val) => typeof val === "number",
+);
+
 const serviceSchema = new Schema<IService>(
   {
     serviceName: {
@@ -11,7 +16,7 @@ const serviceSchema = new Schema<IService>(
     },
     duration: {
       type: Number,
-      enum: Object.values(ServiceDuration),
+      enum: durationValues,
       required: true,
     },
     requiredStaffType: {
