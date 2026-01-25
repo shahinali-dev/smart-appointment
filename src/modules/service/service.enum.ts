@@ -1,13 +1,1 @@
-export enum ServiceDuration {
-  FIFTEEN_MINUTES = 15,
-  THIRTY_MINUTES = 30,
-  SIXTY_MINUTES = 60,
-}
-
-export enum ServiceType {
-  DOCTOR = "DOCTOR",
-  CONSULTANT = "CONSULTANT",
-  SUPPORT_AGENT = "SUPPORT_AGENT",
-  THERAPIST = "THERAPIST",
-  TECHNICIAN = "TECHNICIAN",
-}
+export { ServiceDuration, ServiceType } from "../../enums/common.enum";

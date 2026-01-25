@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { AppointmentStatus } from "./appointment.enum";
 
 export interface IAppointment {
+  _id: Types.ObjectId;
   customerName: string;
   service: Types.ObjectId;
   assignedStaff?: Types.ObjectId | null;
