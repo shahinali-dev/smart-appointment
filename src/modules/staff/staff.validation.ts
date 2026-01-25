@@ -9,7 +9,7 @@ const createStaffValidationSchema = z.object({
   dailyCapacity: z
     .number()
     .min(1, "Daily capacity must be at least 1")
-    .max(10, "Daily capacity cannot exceed 10")
+    .max(5, "Daily capacity cannot exceed 5")
     .optional()
     .default(5),
   availabilityStatus: z

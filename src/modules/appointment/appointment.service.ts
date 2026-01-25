@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import httpStatus from "http-status";
 import { Types } from "mongoose";
 import { AppError } from "../../errors/app_error";
 import QueryBuilder from "../../utils/query_builder.utils";
+import { activityLogService } from "../activity-log/activity_log.service";
 import ServiceModel from "../service/service.model";
 import { AvailabilityStatus } from "../staff/staff.enum";
 import StaffModel from "../staff/staff.model";
@@ -160,6 +162,14 @@ export class AppointmentService {
         createdBy,
         status: AppointmentStatus.SCHEDULED,
       });
+
+      // Log activity
+      await activityLogService.logAppointmentCreated(
+        createdBy,
+        newAppointment._id.toString(),
+        appointmentData.customerName,
+        appointmentData.assignedStaff,
+      );
     } else {
       // No staff assigned - add to queue
       newAppointment = await AppointmentModel.create({
@@ -171,6 +181,13 @@ export class AppointmentService {
       });
 
       await this.updateQueuePositions(createdBy);
+
+      // Log activity
+      await activityLogService.logAppointmentCreated(
+        createdBy,
+        newAppointment._id.toString(),
+        appointmentData.customerName,
+      );
     }
 
     return await AppointmentModel.findById(newAppointment._id)
@@ -236,6 +253,8 @@ export class AppointmentService {
     if (!appointment) {
       throw new AppError(httpStatus.NOT_FOUND, "Appointment not found");
     }
+
+    const oldStatus = appointment.status;
 
     // If service is being updated, validate it
     if (updateData.service) {
@@ -312,6 +331,16 @@ export class AppointmentService {
         }
 
         updateData.status = AppointmentStatus.SCHEDULED;
+
+        // Log staff assignment
+        await activityLogService.logStaffAssigned(
+          createdBy,
+          appointmentId,
+          appointment.customerName,
+          updateData.assignedStaff,
+          staff.name,
+          false,
+        );
       } else {
         // Staff removed - move to queue
         updateData.status = AppointmentStatus.IN_QUEUE;
@@ -359,6 +388,17 @@ export class AppointmentService {
 
     await this.updateQueuePositions(createdBy);
 
+    // Log status change if status was updated
+    if (updateData.status && updateData.status !== oldStatus) {
+      await activityLogService.logAppointmentStatusChange(
+        createdBy,
+        appointmentId,
+        appointment.customerName,
+        updateData.status,
+        updatedAppointment?.assignedStaff?._id.toString(),
+      );
+    }
+
     return updatedAppointment;
   }
 
@@ -367,17 +407,29 @@ export class AppointmentService {
       throw new AppError(httpStatus.BAD_REQUEST, "Invalid appointment ID");
     }
 
-    const appointment = await AppointmentModel.findOneAndUpdate(
-      { _id: appointmentId, createdBy },
-      { isDeleted: true },
-      { new: true },
-    );
+    const appointment = await AppointmentModel.findOne({
+      _id: appointmentId,
+      createdBy,
+    });
 
     if (!appointment) {
       throw new AppError(httpStatus.NOT_FOUND, "Appointment not found");
     }
 
+    await AppointmentModel.findOneAndUpdate(
+      { _id: appointmentId, createdBy },
+      { isDeleted: true },
+      { new: true },
+    );
+
     await this.updateQueuePositions(createdBy);
+
+    // Log deletion
+    await activityLogService.logAppointmentDeleted(
+      createdBy,
+      appointmentId,
+      appointment.customerName,
+    );
 
     return appointment;
   }
@@ -467,12 +519,24 @@ export class AppointmentService {
       );
     }
 
+    const wasInQueue = appointment.status === AppointmentStatus.IN_QUEUE;
+
     appointment.assignedStaff = new Types.ObjectId(staffId);
     appointment.status = AppointmentStatus.SCHEDULED;
     appointment.queuePosition = null;
     await appointment.save();
 
     await this.updateQueuePositions(createdBy);
+
+    // Log staff assignment from queue
+    await activityLogService.logStaffAssigned(
+      createdBy,
+      appointmentId,
+      appointment.customerName,
+      staffId,
+      staff.name,
+      wasInQueue,
+    );
 
     return await AppointmentModel.findById(appointmentId)
       .populate("service", "serviceName duration requiredStaffType")
