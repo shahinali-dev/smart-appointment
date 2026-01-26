@@ -566,6 +566,36 @@ export class AppointmentService {
     return appointments;
   }
 
+  // Get Appointment Date List
+  async getAppointmentDateList(createdBy: string) {
+    const dates = await AppointmentModel.aggregate([
+      {
+        $match: {
+          createdBy: createdBy, // ✅ STRING match
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$appointmentDate",
+            },
+          },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          _id: 0,
+          appointmentDate: "$_id",
+        },
+      },
+    ]);
+
+    return dates.map((d) => d.appointmentDate);
+  }
+
   // Get appointments by staff
   async getAppointmentsByStaff(createdBy: string, staffId: string) {
     if (!Types.ObjectId.isValid(staffId)) {

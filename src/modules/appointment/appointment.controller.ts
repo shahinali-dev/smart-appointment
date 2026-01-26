@@ -89,6 +89,21 @@ router.get(
   }),
 );
 
+router.get(
+  "/date-list",
+  catchAsync(async (req, res) => {
+    const createdBy = req.user!._id.toString();
+    const dateList = await appointmentService.getAppointmentDateList(createdBy);
+
+    sendResponse(res, {
+      success: true,
+      statusCode: httpStatus.OK,
+      message: "Date list fetched successfully",
+      data: dateList,
+    });
+  }),
+);
+
 // Get appointments by staff
 router.get(
   "/by-staff/:staffId",
