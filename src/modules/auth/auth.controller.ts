@@ -53,6 +53,7 @@ router.get(
 
 router.post(
   "/signout",
+  isAuth,
   catchAsync(async (req, res) => {
     res.clearCookie("accessToken");
     res.clearCookie("refreshToken");
