@@ -3,6 +3,10 @@ import httpStatus from "http-status";
 import { Types } from "mongoose";
 import { AppError } from "../../errors/app_error";
 import QueryBuilder from "../../utils/query_builder.utils";
+import {
+  cancelAppointmentCompletion,
+  scheduleAppointmentCompletion,
+} from "../../utils/schedule_appointment.utils";
 import { activityLogService } from "../activity-log/activity_log.service";
 import ServiceModel from "../service/service.model";
 import { AvailabilityStatus } from "../staff/staff.enum";
@@ -18,29 +22,69 @@ import {
 export class AppointmentService {
   private appointmentSearchableFields = ["customerName"];
 
-  // Helper: Check if staff has time conflict
+  // Helper: Check if appointment time is in the past
+  private isPastTime(appointmentDate: Date, appointmentTime: string): boolean {
+    const now = new Date();
+    const [hours, minutes] = appointmentTime.split(":").map(Number);
+    const appointmentDateTime = new Date(appointmentDate);
+    appointmentDateTime.setHours(hours, minutes, 0, 0);
+
+    return appointmentDateTime < now;
+  }
+
+  // Helper: Check if staff has time conflict (considering service duration)
   private async checkTimeConflict(
     staffId: string,
     appointmentDate: Date,
     appointmentTime: string,
+    serviceDuration: number,
     excludeAppointmentId?: string,
   ): Promise<boolean> {
-    const query: any = {
+    // Parse appointment time to calculate time window
+    const [hours, minutes] = appointmentTime.split(":").map(Number);
+    const appointmentStart = new Date(appointmentDate);
+    appointmentStart.setHours(hours, minutes, 0, 0);
+
+    const appointmentEnd = new Date(appointmentStart);
+    appointmentEnd.setMinutes(appointmentEnd.getMinutes() + serviceDuration);
+
+    // Find all scheduled appointments for this staff
+    const existingAppointments = await AppointmentModel.find({
       assignedStaff: staffId,
       appointmentDate,
-      appointmentTime,
       status: {
         $in: [AppointmentStatus.SCHEDULED, AppointmentStatus.IN_QUEUE],
       },
       isDeleted: false,
-    };
+    }).populate("service", "duration");
 
     if (excludeAppointmentId) {
-      query._id = { $ne: excludeAppointmentId };
+      existingAppointments = existingAppointments.filter(
+        (apt) => apt._id.toString() !== excludeAppointmentId,
+      );
     }
 
-    const conflict = await AppointmentModel.findOne(query);
-    return !!conflict;
+    // Check for time overlaps considering service duration
+    for (const existingApt of existingAppointments) {
+      const [existHours, existMinutes] = existingApt.appointmentTime
+        .split(":")
+        .map(Number);
+      const existingStart = new Date(appointmentDate);
+      existingStart.setHours(existHours, existMinutes, 0, 0);
+
+      const existingEnd = new Date(existingStart);
+      const existingService: any = existingApt.service;
+      existingEnd.setMinutes(
+        existingEnd.getMinutes() + (existingService?.duration || 0),
+      );
+
+      // Check if there's any overlap between the two time windows
+      if (appointmentStart < existingEnd && appointmentEnd > existingStart) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   // Helper: Get staff daily appointment count
@@ -99,6 +143,14 @@ export class AppointmentService {
 
     const appointmentDate = new Date(appointmentData.appointmentDate);
 
+    // Check if appointment time is in the past
+    if (this.isPastTime(appointmentDate, appointmentData.appointmentTime)) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "Cannot create appointments for past times",
+      );
+    }
+
     let newAppointment: IAppointment;
 
     // If staff is assigned
@@ -129,11 +181,12 @@ export class AppointmentService {
         );
       }
 
-      // Check time conflict
+      // Check time conflict (now with service duration)
       const hasConflict = await this.checkTimeConflict(
         appointmentData.assignedStaff,
         appointmentDate,
         appointmentData.appointmentTime,
+        service.duration,
       );
 
       if (hasConflict) {
@@ -162,6 +215,14 @@ export class AppointmentService {
         createdBy,
         status: AppointmentStatus.SCHEDULED,
       });
+
+      // Schedule appointment auto-completion after service duration
+      await scheduleAppointmentCompletion(
+        newAppointment._id.toString(),
+        appointmentDate,
+        appointmentData.appointmentTime,
+        service.duration,
+      );
 
       // Log activity
       await activityLogService.logAppointmentCreated(
@@ -308,6 +369,7 @@ export class AppointmentService {
           updateData.assignedStaff,
           appointmentDate,
           appointmentTime,
+          service?.duration || 0,
           appointmentId,
         );
 
@@ -358,10 +420,13 @@ export class AppointmentService {
       const appointmentTime =
         updateData.appointmentTime || appointment.appointmentTime;
 
+      const service = await ServiceModel.findById(appointment.service);
+
       const hasConflict = await this.checkTimeConflict(
         appointment.assignedStaff.toString(),
         appointmentDate,
         appointmentTime,
+        service?.duration || 0,
         appointmentId,
       );
 
@@ -385,6 +450,28 @@ export class AppointmentService {
     )
       .populate("service", "serviceName duration requiredStaffType")
       .populate("assignedStaff", "name serviceType availabilityStatus");
+
+    // If appointment date or time was updated and status is SCHEDULED, reschedule completion
+    if (
+      updatedAppointment &&
+      (updateData.appointmentDate || updateData.appointmentTime) &&
+      updatedAppointment.status === AppointmentStatus.SCHEDULED
+    ) {
+      const newDate = updateData.appointmentDate
+        ? new Date(updateData.appointmentDate)
+        : appointment.appointmentDate;
+      const newTime = updateData.appointmentTime || appointment.appointmentTime;
+      const service: any = updatedAppointment.service;
+
+      // Cancel old schedule and create new one
+      await cancelAppointmentCompletion(appointmentId);
+      await scheduleAppointmentCompletion(
+        appointmentId,
+        newDate,
+        newTime,
+        service?.duration || 0,
+      );
+    }
 
     await this.updateQueuePositions(createdBy);
 
@@ -421,6 +508,11 @@ export class AppointmentService {
       { isDeleted: true },
       { new: true },
     );
+
+    // Cancel scheduled completion if appointment was scheduled
+    if (appointment.status === AppointmentStatus.SCHEDULED) {
+      await cancelAppointmentCompletion(appointmentId);
+    }
 
     await this.updateQueuePositions(createdBy);
 
@@ -497,6 +589,7 @@ export class AppointmentService {
       staffId,
       appointment.appointmentDate,
       appointment.appointmentTime,
+      service.duration,
       appointmentId,
     );
 
@@ -525,6 +618,16 @@ export class AppointmentService {
     appointment.status = AppointmentStatus.SCHEDULED;
     appointment.queuePosition = null;
     await appointment.save();
+
+    // Schedule appointment auto-completion after service duration
+    // (it will be scheduled from queue to scheduled transition)
+    const service: any = appointment.service;
+    await scheduleAppointmentCompletion(
+      appointmentId,
+      appointment.appointmentDate,
+      appointment.appointmentTime,
+      service?.duration || 0,
+    );
 
     await this.updateQueuePositions(createdBy);
 
@@ -571,7 +674,7 @@ export class AppointmentService {
     const dates = await AppointmentModel.aggregate([
       {
         $match: {
-          createdBy: createdBy, // ✅ STRING match
+          createdBy: createdBy,
         },
       },
       {
