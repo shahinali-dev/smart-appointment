@@ -129,6 +129,14 @@ export class StaffService {
 
     return staff;
   }
+
+  // staff type list for dropdown
+  async getStaffTypeList(createdBy: string) {
+    const staffTypeList = await StaffModel.distinct("serviceType", {
+      createdBy,
+    });
+    return staffTypeList;
+  }
 }
 
 // Export singleton instance

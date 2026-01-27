@@ -119,5 +119,20 @@ router.get(
     });
   }),
 );
+// staff type list
+router.get(
+  "/type/list",
+  catchAsync(async (req, res) => {
+    const createdBy = req.user!._id.toString();
+    const staffTypeList = await staffService.getStaffTypeList(createdBy);
+
+    sendResponse(res, {
+      success: true,
+      statusCode: httpStatus.OK,
+      message: "Staff type list fetched successfully",
+      data: staffTypeList,
+    });
+  }),
+);
 
 export const staffRoute = router;
