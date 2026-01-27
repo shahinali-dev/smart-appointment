@@ -3,10 +3,6 @@ import httpStatus from "http-status";
 import { Types } from "mongoose";
 import { AppError } from "../../errors/app_error";
 import QueryBuilder from "../../utils/query_builder.utils";
-import {
-  cancelAppointmentCompletion,
-  scheduleAppointmentCompletion,
-} from "../../utils/schedule_appointment.utils";
 import { activityLogService } from "../activity-log/activity_log.service";
 import ServiceModel from "../service/service.model";
 import { AvailabilityStatus } from "../staff/staff.enum";
@@ -38,7 +34,7 @@ export class AppointmentService {
     appointmentDate: Date,
     appointmentTime: string,
     serviceDuration: number,
-    excludeAppointmentId?: string,
+    excludeAppointmentId?: string
   ): Promise<boolean> {
     // Parse appointment time to calculate time window
     const [hours, minutes] = appointmentTime.split(":").map(Number);
@@ -61,7 +57,7 @@ export class AppointmentService {
 
     if (excludeAppointmentId) {
       existingAppointments = existingAppointments.filter(
-        (apt) => apt._id.toString() !== excludeAppointmentId,
+        (apt) => apt._id.toString() !== excludeAppointmentId
       );
     }
 
@@ -76,7 +72,7 @@ export class AppointmentService {
       const existingEnd = new Date(existingStart);
       const existingService: any = existingApt.service;
       existingEnd.setMinutes(
-        existingEnd.getMinutes() + (existingService?.duration || 0),
+        existingEnd.getMinutes() + (existingService?.duration || 0)
       );
 
       // Check if there's any overlap between the two time windows
@@ -91,7 +87,7 @@ export class AppointmentService {
   // Helper: Get staff daily appointment count
   private async getStaffDailyCount(
     staffId: string,
-    appointmentDate: Date,
+    appointmentDate: Date
   ): Promise<number> {
     const startOfDay = new Date(appointmentDate);
     startOfDay.setHours(0, 0, 0, 0);
@@ -131,7 +127,7 @@ export class AppointmentService {
   // AUTO-ASSIGNMENT: Assign eligible queue appointments to available staff
   async assignEligibleQueueAppointments(
     createdBy: string,
-    specificStaffId?: string,
+    specificStaffId?: string
   ) {
     try {
       // Get all queue appointments sorted by queue position
@@ -166,7 +162,7 @@ export class AppointmentService {
         const eligibleStaff = availableStaff.filter(
           (staff) =>
             staff.serviceType === service.requiredStaffType &&
-            (!specificStaffId || staff._id.toString() === specificStaffId),
+            (!specificStaffId || staff._id.toString() === specificStaffId)
         );
 
         if (eligibleStaff.length === 0) {
@@ -179,7 +175,7 @@ export class AppointmentService {
         for (const staff of eligibleStaff) {
           const dailyCount = await this.getStaffDailyCount(
             staff._id.toString(),
-            queueAppointment.appointmentDate,
+            queueAppointment.appointmentDate
           );
 
           // Check if staff has capacity
@@ -189,7 +185,7 @@ export class AppointmentService {
               staff._id.toString(),
               queueAppointment.appointmentDate,
               queueAppointment.appointmentTime,
-              service.duration,
+              service.duration
             );
 
             if (!hasConflict) {
@@ -203,19 +199,11 @@ export class AppointmentService {
         // If we found suitable staff, assign the appointment
         if (assignedToStaff) {
           queueAppointment.assignedStaff = new Types.ObjectId(
-            assignedToStaff._id.toString(),
+            assignedToStaff._id.toString()
           );
           queueAppointment.status = AppointmentStatus.SCHEDULED;
           queueAppointment.queuePosition = null;
           await queueAppointment.save();
-
-          // Schedule appointment auto-completion
-          await scheduleAppointmentCompletion(
-            queueAppointment._id.toString(),
-            queueAppointment.appointmentDate,
-            queueAppointment.appointmentTime,
-            service.duration,
-          );
 
           // Log the auto-assignment
           await activityLogService.logStaffAssigned(
@@ -224,7 +212,7 @@ export class AppointmentService {
             queueAppointment.customerName,
             assignedToStaff._id.toString(),
             assignedToStaff.name,
-            true, // fromQueue = true for auto-assignment
+            true // fromQueue = true for auto-assignment
           );
         }
       }
@@ -240,7 +228,7 @@ export class AppointmentService {
 
   async createAppointment(
     createdBy: string,
-    appointmentData: ICreateAppointment,
+    appointmentData: ICreateAppointment
   ) {
     // Validate service exists and belongs to user
     const service = await ServiceModel.findOne({
@@ -258,7 +246,7 @@ export class AppointmentService {
     if (this.isPastTime(appointmentDate, appointmentData.appointmentTime)) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        "Cannot create appointments for past times",
+        "Cannot create appointments for past times"
       );
     }
 
@@ -278,7 +266,7 @@ export class AppointmentService {
       for (const staff of availableStaff) {
         const dailyCount = await this.getStaffDailyCount(
           staff._id.toString(),
-          appointmentDate,
+          appointmentDate
         );
 
         if (dailyCount < staff.dailyCapacity) {
@@ -286,7 +274,7 @@ export class AppointmentService {
             staff._id.toString(),
             appointmentDate,
             appointmentData.appointmentTime,
-            service.duration,
+            service.duration
           );
 
           if (!hasConflict) {
@@ -313,7 +301,7 @@ export class AppointmentService {
       if (staff.serviceType !== service.requiredStaffType) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
-          `This staff member cannot provide this service. Required: ${service.requiredStaffType}, Staff type: ${staff.serviceType}`,
+          `This staff member cannot provide this service. Required: ${service.requiredStaffType}, Staff type: ${staff.serviceType}`
         );
       }
 
@@ -321,7 +309,7 @@ export class AppointmentService {
       if (staff.availabilityStatus !== AvailabilityStatus.AVAILABLE) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
-          "This staff member is currently on leave",
+          "This staff member is currently on leave"
         );
       }
 
@@ -330,26 +318,26 @@ export class AppointmentService {
         assignedStaffId,
         appointmentDate,
         appointmentData.appointmentTime,
-        service.duration,
+        service.duration
       );
 
       if (hasConflict) {
         throw new AppError(
           httpStatus.CONFLICT,
-          "This staff member already has an appointment at this time",
+          "This staff member already has an appointment at this time"
         );
       }
 
       // Check daily capacity
       const dailyCount = await this.getStaffDailyCount(
         assignedStaffId,
-        appointmentDate,
+        appointmentDate
       );
 
       if (dailyCount >= staff.dailyCapacity) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
-          `This staff member has reached their daily capacity (${staff.dailyCapacity} appointments)`,
+          `This staff member has reached their daily capacity (${staff.dailyCapacity} appointments)`
         );
       }
 
@@ -361,20 +349,12 @@ export class AppointmentService {
         status: AppointmentStatus.SCHEDULED,
       });
 
-      // Schedule appointment auto-completion after service duration
-      await scheduleAppointmentCompletion(
-        newAppointment._id.toString(),
-        appointmentDate,
-        appointmentData.appointmentTime,
-        service.duration,
-      );
-
       // Log activity
       await activityLogService.logAppointmentCreated(
         createdBy,
         newAppointment._id.toString(),
         appointmentData.customerName,
-        assignedStaffId,
+        assignedStaffId
       );
     } else {
       // No staff assigned - add to queue
@@ -392,7 +372,7 @@ export class AppointmentService {
       await activityLogService.logAppointmentCreated(
         createdBy,
         newAppointment._id.toString(),
-        appointmentData.customerName,
+        appointmentData.customerName
       );
     }
 
@@ -406,7 +386,7 @@ export class AppointmentService {
       AppointmentModel.find({ createdBy })
         .populate("service", "serviceName duration requiredStaffType")
         .populate("assignedStaff", "name serviceType availabilityStatus"),
-      query,
+      query
     )
       .search(this.appointmentSearchableFields)
       .filter()
@@ -445,7 +425,7 @@ export class AppointmentService {
   async updateAppointment(
     createdBy: string,
     appointmentId: string,
-    updateData: IUpdateAppointment,
+    updateData: IUpdateAppointment
   ) {
     if (!Types.ObjectId.isValid(appointmentId)) {
       throw new AppError(httpStatus.BAD_REQUEST, "Invalid appointment ID");
@@ -492,20 +472,20 @@ export class AppointmentService {
         }
 
         const service = await ServiceModel.findById(
-          updateData.service || appointment.service,
+          updateData.service || appointment.service
         );
 
         if (staff.serviceType !== service?.requiredStaffType) {
           throw new AppError(
             httpStatus.BAD_REQUEST,
-            "Staff type does not match service requirement",
+            "Staff type does not match service requirement"
           );
         }
 
         if (staff.availabilityStatus !== AvailabilityStatus.AVAILABLE) {
           throw new AppError(
             httpStatus.BAD_REQUEST,
-            "This staff member is currently on leave",
+            "This staff member is currently on leave"
           );
         }
 
@@ -520,25 +500,25 @@ export class AppointmentService {
           appointmentDate,
           appointmentTime,
           service?.duration || 0,
-          appointmentId,
+          appointmentId
         );
 
         if (hasConflict) {
           throw new AppError(
             httpStatus.CONFLICT,
-            "This staff member already has an appointment at this time",
+            "This staff member already has an appointment at this time"
           );
         }
 
         const dailyCount = await this.getStaffDailyCount(
           updateData.assignedStaff,
-          appointmentDate,
+          appointmentDate
         );
 
         if (dailyCount >= staff.dailyCapacity) {
           throw new AppError(
             httpStatus.BAD_REQUEST,
-            `This staff member has reached their daily capacity (${staff.dailyCapacity} appointments)`,
+            `This staff member has reached their daily capacity (${staff.dailyCapacity} appointments)`
           );
         }
 
@@ -551,7 +531,7 @@ export class AppointmentService {
           appointment.customerName,
           updateData.assignedStaff,
           staff.name,
-          false,
+          false
         );
       } else {
         // Staff removed - move to queue
@@ -577,13 +557,13 @@ export class AppointmentService {
         appointmentDate,
         appointmentTime,
         service?.duration || 0,
-        appointmentId,
+        appointmentId
       );
 
       if (hasConflict) {
         throw new AppError(
           httpStatus.CONFLICT,
-          "This staff member already has an appointment at this time",
+          "This staff member already has an appointment at this time"
         );
       }
     }
@@ -596,32 +576,10 @@ export class AppointmentService {
             appointmentDate: new Date(updateData.appointmentDate),
           }
         : updateData,
-      { new: true, runValidators: true },
+      { new: true, runValidators: true }
     )
       .populate("service", "serviceName duration requiredStaffType")
       .populate("assignedStaff", "name serviceType availabilityStatus");
-
-    // If appointment date or time was updated and status is SCHEDULED, reschedule completion
-    if (
-      updatedAppointment &&
-      (updateData.appointmentDate || updateData.appointmentTime) &&
-      updatedAppointment.status === AppointmentStatus.SCHEDULED
-    ) {
-      const newDate = updateData.appointmentDate
-        ? new Date(updateData.appointmentDate)
-        : appointment.appointmentDate;
-      const newTime = updateData.appointmentTime || appointment.appointmentTime;
-      const service: any = updatedAppointment.service;
-
-      // Cancel old schedule and create new one
-      await cancelAppointmentCompletion(appointmentId);
-      await scheduleAppointmentCompletion(
-        appointmentId,
-        newDate,
-        newTime,
-        service?.duration || 0,
-      );
-    }
 
     await this.updateQueuePositions(createdBy);
 
@@ -632,7 +590,7 @@ export class AppointmentService {
         appointmentId,
         appointment.customerName,
         updateData.status,
-        updatedAppointment?.assignedStaff?._id.toString(),
+        updatedAppointment?.assignedStaff?._id.toString()
       );
 
       // AUTO-ASSIGNMENT: If appointment completed or cancelled, try to assign from queue
@@ -644,7 +602,7 @@ export class AppointmentService {
         if (updatedAppointment?.assignedStaff) {
           await this.assignEligibleQueueAppointments(
             createdBy,
-            updatedAppointment.assignedStaff._id.toString(),
+            updatedAppointment.assignedStaff._id.toString()
           );
         }
       }
@@ -670,13 +628,8 @@ export class AppointmentService {
     await AppointmentModel.findOneAndUpdate(
       { _id: appointmentId, createdBy },
       { isDeleted: true },
-      { new: true },
+      { new: true }
     );
-
-    // Cancel scheduled completion if appointment was scheduled
-    if (appointment.status === AppointmentStatus.SCHEDULED) {
-      await cancelAppointmentCompletion(appointmentId);
-    }
 
     await this.updateQueuePositions(createdBy);
 
@@ -684,7 +637,7 @@ export class AppointmentService {
     await activityLogService.logAppointmentDeleted(
       createdBy,
       appointmentId,
-      appointment.customerName,
+      appointment.customerName
     );
 
     // AUTO-ASSIGNMENT: If scheduled appointment was deleted, free up staff capacity
@@ -694,7 +647,7 @@ export class AppointmentService {
     ) {
       await this.assignEligibleQueueAppointments(
         createdBy,
-        appointment.assignedStaff.toString(),
+        appointment.assignedStaff.toString()
       );
     }
 
@@ -717,7 +670,7 @@ export class AppointmentService {
   async assignStaffToAppointment(
     createdBy: string,
     appointmentId: string,
-    staffId: string,
+    staffId: string
   ) {
     if (
       !Types.ObjectId.isValid(appointmentId) ||
@@ -749,14 +702,14 @@ export class AppointmentService {
     if (staff.serviceType !== service.requiredStaffType) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        "Staff type does not match service requirement",
+        "Staff type does not match service requirement"
       );
     }
 
     if (staff.availabilityStatus !== AvailabilityStatus.AVAILABLE) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        "This staff member is currently on leave",
+        "This staff member is currently on leave"
       );
     }
 
@@ -765,25 +718,25 @@ export class AppointmentService {
       appointment.appointmentDate,
       appointment.appointmentTime,
       service.duration,
-      appointmentId,
+      appointmentId
     );
 
     if (hasConflict) {
       throw new AppError(
         httpStatus.CONFLICT,
-        "This staff member already has an appointment at this time",
+        "This staff member already has an appointment at this time"
       );
     }
 
     const dailyCount = await this.getStaffDailyCount(
       staffId,
-      appointment.appointmentDate,
+      appointment.appointmentDate
     );
 
     if (dailyCount >= staff.dailyCapacity) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `This staff member has reached their daily capacity (${staff.dailyCapacity} appointments)`,
+        `This staff member has reached their daily capacity (${staff.dailyCapacity} appointments)`
       );
     }
 
@@ -794,15 +747,6 @@ export class AppointmentService {
     appointment.queuePosition = null;
     await appointment.save();
 
-    // Schedule appointment auto-completion after service duration
-    // (it will be scheduled from queue to scheduled transition)
-    await scheduleAppointmentCompletion(
-      appointmentId,
-      appointment.appointmentDate,
-      appointment.appointmentTime,
-      service?.duration || 0,
-    );
-
     await this.updateQueuePositions(createdBy);
 
     // Log staff assignment from queue
@@ -812,7 +756,7 @@ export class AppointmentService {
       appointment.customerName,
       staffId,
       staff.name,
-      wasInQueue,
+      wasInQueue
     );
 
     return await AppointmentModel.findById(appointmentId)
@@ -924,7 +868,7 @@ export class AppointmentService {
           availabilityStatus: staff.availabilityStatus,
           isOverloaded: appointmentCount >= staff.dailyCapacity,
         };
-      }),
+      })
     );
 
     return staffLoad;
