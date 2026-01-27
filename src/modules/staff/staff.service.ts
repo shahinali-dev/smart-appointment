@@ -63,6 +63,15 @@ export class StaffService {
       throw new AppError(httpStatus.BAD_REQUEST, "Invalid staff ID");
     }
 
+    const oldStaff = await StaffModel.findOne({
+      _id: staffId,
+      createdBy,
+    });
+
+    if (!oldStaff) {
+      throw new AppError(httpStatus.NOT_FOUND, "Staff not found");
+    }
+
     const staff = await StaffModel.findOneAndUpdate(
       { _id: staffId, createdBy },
       updateData,
@@ -71,6 +80,21 @@ export class StaffService {
 
     if (!staff) {
       throw new AppError(httpStatus.NOT_FOUND, "Staff not found");
+    }
+
+    // AUTO-ASSIGNMENT: If availability changed to AVAILABLE, try to assign from queue
+    if (
+      updateData.availabilityStatus &&
+      oldStaff.availabilityStatus === AvailabilityStatus.ON_LEAVE &&
+      updateData.availabilityStatus === AvailabilityStatus.AVAILABLE
+    ) {
+      // Import here to avoid circular dependency
+      const { appointmentService } =
+        await import("../appointment/appointment.service");
+      await appointmentService.assignEligibleQueueAppointments(
+        createdBy,
+        staffId,
+      );
     }
 
     return staff;

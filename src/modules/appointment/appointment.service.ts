@@ -42,6 +42,7 @@ export class AppointmentService {
   ): Promise<boolean> {
     // Parse appointment time to calculate time window
     const [hours, minutes] = appointmentTime.split(":").map(Number);
+
     const appointmentStart = new Date(appointmentDate);
     appointmentStart.setHours(hours, minutes, 0, 0);
 
@@ -49,7 +50,7 @@ export class AppointmentService {
     appointmentEnd.setMinutes(appointmentEnd.getMinutes() + serviceDuration);
 
     // Find all scheduled appointments for this staff
-    const existingAppointments = await AppointmentModel.find({
+    let existingAppointments = await AppointmentModel.find({
       assignedStaff: staffId,
       appointmentDate,
       status: {
@@ -124,6 +125,116 @@ export class AppointmentService {
     for (let i = 0; i < queuedAppointments.length; i++) {
       queuedAppointments[i].queuePosition = i + 1;
       await queuedAppointments[i].save();
+    }
+  }
+
+  // AUTO-ASSIGNMENT: Assign eligible queue appointments to available staff
+  async assignEligibleQueueAppointments(
+    createdBy: string,
+    specificStaffId?: string,
+  ) {
+    try {
+      // Get all queue appointments sorted by queue position
+      const queueAppointments = await AppointmentModel.find({
+        createdBy,
+        status: AppointmentStatus.IN_QUEUE,
+        isDeleted: false,
+      })
+        .sort({ appointmentDate: 1, appointmentTime: 1, createdAt: 1 })
+        .populate("service", "requiredStaffType duration");
+
+      if (queueAppointments.length === 0) {
+        return; // No queue appointments to assign
+      }
+
+      // Get all available staff
+      const availableStaff = await StaffModel.find({
+        createdBy,
+        availabilityStatus: AvailabilityStatus.AVAILABLE,
+        isDeleted: false,
+      });
+
+      if (availableStaff.length === 0) {
+        return; // No available staff to assign to
+      }
+
+      // Process each queue appointment
+      for (const queueAppointment of queueAppointments) {
+        const service: any = queueAppointment.service;
+
+        // Find eligible staff (matching service type)
+        const eligibleStaff = availableStaff.filter(
+          (staff) =>
+            staff.serviceType === service.requiredStaffType &&
+            (!specificStaffId || staff._id.toString() === specificStaffId),
+        );
+
+        if (eligibleStaff.length === 0) {
+          continue; // No eligible staff for this appointment's service
+        }
+
+        // Find staff with available capacity (in priority order)
+        let assignedToStaff = null;
+
+        for (const staff of eligibleStaff) {
+          const dailyCount = await this.getStaffDailyCount(
+            staff._id.toString(),
+            queueAppointment.appointmentDate,
+          );
+
+          // Check if staff has capacity
+          if (dailyCount < staff.dailyCapacity) {
+            // Check for time conflicts
+            const hasConflict = await this.checkTimeConflict(
+              staff._id.toString(),
+              queueAppointment.appointmentDate,
+              queueAppointment.appointmentTime,
+              service.duration,
+            );
+
+            if (!hasConflict) {
+              // Found suitable staff - assign appointment
+              assignedToStaff = staff;
+              break;
+            }
+          }
+        }
+
+        // If we found suitable staff, assign the appointment
+        if (assignedToStaff) {
+          queueAppointment.assignedStaff = new Types.ObjectId(
+            assignedToStaff._id.toString(),
+          );
+          queueAppointment.status = AppointmentStatus.SCHEDULED;
+          queueAppointment.queuePosition = null;
+          await queueAppointment.save();
+
+          // Schedule appointment auto-completion
+          await scheduleAppointmentCompletion(
+            queueAppointment._id.toString(),
+            queueAppointment.appointmentDate,
+            queueAppointment.appointmentTime,
+            service.duration,
+          );
+
+          // Log the auto-assignment
+          await activityLogService.logStaffAssigned(
+            createdBy,
+            queueAppointment._id.toString(),
+            queueAppointment.customerName,
+            assignedToStaff._id.toString(),
+            assignedToStaff.name,
+            true, // fromQueue = true for auto-assignment
+          );
+        }
+      }
+
+      // Update queue positions for remaining appointments
+      await this.updateQueuePositions(createdBy);
+    } catch (error) {
+      // Log error but don't throw - auto-assignment shouldn't break other operations
+      // eslint-disable-next-line no-console
+      console.error("Error in auto-assignment:", error);
     }
   }
 
@@ -484,6 +595,20 @@ export class AppointmentService {
         updateData.status,
         updatedAppointment?.assignedStaff?._id.toString(),
       );
+
+      // AUTO-ASSIGNMENT: If appointment completed or cancelled, try to assign from queue
+      if (
+        updateData.status === AppointmentStatus.COMPLETED ||
+        updateData.status === AppointmentStatus.CANCELLED
+      ) {
+        // Trigger auto-assignment for this staff's queue
+        if (updatedAppointment?.assignedStaff) {
+          await this.assignEligibleQueueAppointments(
+            createdBy,
+            updatedAppointment.assignedStaff._id.toString(),
+          );
+        }
+      }
     }
 
     return updatedAppointment;
@@ -523,6 +648,17 @@ export class AppointmentService {
       appointment.customerName,
     );
 
+    // AUTO-ASSIGNMENT: If scheduled appointment was deleted, free up staff capacity
+    if (
+      appointment.status === AppointmentStatus.SCHEDULED &&
+      appointment.assignedStaff
+    ) {
+      await this.assignEligibleQueueAppointments(
+        createdBy,
+        appointment.assignedStaff.toString(),
+      );
+    }
+
     return appointment;
   }
 
@@ -556,6 +692,8 @@ export class AppointmentService {
       createdBy,
     }).populate("service");
 
+    console.log("Appointment found: ", appointment);
+
     if (!appointment) {
       throw new AppError(httpStatus.NOT_FOUND, "Appointment not found");
     }
@@ -564,6 +702,7 @@ export class AppointmentService {
       _id: staffId,
       createdBy,
     });
+    console.log("Staff found: ", staff);
 
     if (!staff) {
       throw new AppError(httpStatus.NOT_FOUND, "Staff not found");
@@ -572,18 +711,24 @@ export class AppointmentService {
     const service: any = appointment.service;
 
     if (staff.serviceType !== service.requiredStaffType) {
+      console.log("Staff type does not match service requirement");
       throw new AppError(
         httpStatus.BAD_REQUEST,
         "Staff type does not match service requirement",
       );
     }
 
+    console.log("Service found: ", service);
+
     if (staff.availabilityStatus !== AvailabilityStatus.AVAILABLE) {
+      console.log("This staff member is currently on leave");
       throw new AppError(
         httpStatus.BAD_REQUEST,
         "This staff member is currently on leave",
       );
     }
+
+    console.log("Staff availability status: ", staff.availabilityStatus);
 
     const hasConflict = await this.checkTimeConflict(
       staffId,
@@ -593,17 +738,24 @@ export class AppointmentService {
       appointmentId,
     );
 
+    console.log("Has conflict: ", hasConflict);
+
     if (hasConflict) {
+      console.log("Has conflict: ");
       throw new AppError(
         httpStatus.CONFLICT,
         "This staff member already has an appointment at this time",
       );
     }
 
+    console.log("Has no conflict: ");
+
     const dailyCount = await this.getStaffDailyCount(
       staffId,
       appointment.appointmentDate,
     );
+
+    console.log("Daily count: ", dailyCount);
 
     if (dailyCount >= staff.dailyCapacity) {
       throw new AppError(
@@ -618,6 +770,8 @@ export class AppointmentService {
     appointment.status = AppointmentStatus.SCHEDULED;
     appointment.queuePosition = null;
     await appointment.save();
+
+    console.log("appointment", appointment);
 
     // Schedule appointment auto-completion after service duration
     // (it will be scheduled from queue to scheduled transition)
