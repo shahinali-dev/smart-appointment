@@ -263,12 +263,45 @@ export class AppointmentService {
     }
 
     let newAppointment: IAppointment;
+    let assignedStaffId = appointmentData.assignedStaff;
 
-    // If staff is assigned
-    if (appointmentData.assignedStaff) {
+    // If staff is NOT explicitly assigned, try to find suitable staff from available ones
+    if (!assignedStaffId) {
+      const availableStaff = await StaffModel.find({
+        createdBy,
+        serviceType: service.requiredStaffType,
+        availabilityStatus: AvailabilityStatus.AVAILABLE,
+        isDeleted: false,
+      });
+
+      // Try to find staff with available capacity and no time conflict
+      for (const staff of availableStaff) {
+        const dailyCount = await this.getStaffDailyCount(
+          staff._id.toString(),
+          appointmentDate,
+        );
+
+        if (dailyCount < staff.dailyCapacity) {
+          const hasConflict = await this.checkTimeConflict(
+            staff._id.toString(),
+            appointmentDate,
+            appointmentData.appointmentTime,
+            service.duration,
+          );
+
+          if (!hasConflict) {
+            assignedStaffId = staff._id.toString();
+            break;
+          }
+        }
+      }
+    }
+
+    // If staff is assigned (either explicitly or auto-found)
+    if (assignedStaffId) {
       // Validate staff exists and belongs to user
       const staff = await StaffModel.findOne({
-        _id: appointmentData.assignedStaff,
+        _id: assignedStaffId,
         createdBy,
       });
 
@@ -294,7 +327,7 @@ export class AppointmentService {
 
       // Check time conflict (now with service duration)
       const hasConflict = await this.checkTimeConflict(
-        appointmentData.assignedStaff,
+        assignedStaffId,
         appointmentDate,
         appointmentData.appointmentTime,
         service.duration,
@@ -309,7 +342,7 @@ export class AppointmentService {
 
       // Check daily capacity
       const dailyCount = await this.getStaffDailyCount(
-        appointmentData.assignedStaff,
+        assignedStaffId,
         appointmentDate,
       );
 
@@ -324,6 +357,7 @@ export class AppointmentService {
         ...appointmentData,
         appointmentDate,
         createdBy,
+        assignedStaff: assignedStaffId,
         status: AppointmentStatus.SCHEDULED,
       });
 
@@ -340,7 +374,7 @@ export class AppointmentService {
         createdBy,
         newAppointment._id.toString(),
         appointmentData.customerName,
-        appointmentData.assignedStaff,
+        assignedStaffId,
       );
     } else {
       // No staff assigned - add to queue
@@ -427,6 +461,11 @@ export class AppointmentService {
     }
 
     const oldStatus = appointment.status;
+
+    // Filter out empty string from assignedStaff (convert to null to remove it)
+    if (updateData.assignedStaff === "") {
+      updateData.assignedStaff = null as any;
+    }
 
     // If service is being updated, validate it
     if (updateData.service) {
@@ -692,8 +731,6 @@ export class AppointmentService {
       createdBy,
     }).populate("service");
 
-    console.log("Appointment found: ", appointment);
-
     if (!appointment) {
       throw new AppError(httpStatus.NOT_FOUND, "Appointment not found");
     }
@@ -702,7 +739,6 @@ export class AppointmentService {
       _id: staffId,
       createdBy,
     });
-    console.log("Staff found: ", staff);
 
     if (!staff) {
       throw new AppError(httpStatus.NOT_FOUND, "Staff not found");
@@ -711,24 +747,18 @@ export class AppointmentService {
     const service: any = appointment.service;
 
     if (staff.serviceType !== service.requiredStaffType) {
-      console.log("Staff type does not match service requirement");
       throw new AppError(
         httpStatus.BAD_REQUEST,
         "Staff type does not match service requirement",
       );
     }
 
-    console.log("Service found: ", service);
-
     if (staff.availabilityStatus !== AvailabilityStatus.AVAILABLE) {
-      console.log("This staff member is currently on leave");
       throw new AppError(
         httpStatus.BAD_REQUEST,
         "This staff member is currently on leave",
       );
     }
-
-    console.log("Staff availability status: ", staff.availabilityStatus);
 
     const hasConflict = await this.checkTimeConflict(
       staffId,
@@ -738,24 +768,17 @@ export class AppointmentService {
       appointmentId,
     );
 
-    console.log("Has conflict: ", hasConflict);
-
     if (hasConflict) {
-      console.log("Has conflict: ");
       throw new AppError(
         httpStatus.CONFLICT,
         "This staff member already has an appointment at this time",
       );
     }
 
-    console.log("Has no conflict: ");
-
     const dailyCount = await this.getStaffDailyCount(
       staffId,
       appointment.appointmentDate,
     );
-
-    console.log("Daily count: ", dailyCount);
 
     if (dailyCount >= staff.dailyCapacity) {
       throw new AppError(
@@ -770,8 +793,6 @@ export class AppointmentService {
     appointment.status = AppointmentStatus.SCHEDULED;
     appointment.queuePosition = null;
     await appointment.save();
-
-    console.log("appointment", appointment);
 
     // Schedule appointment auto-completion after service duration
     // (it will be scheduled from queue to scheduled transition)
