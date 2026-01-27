@@ -621,7 +621,6 @@ export class AppointmentService {
 
     // Schedule appointment auto-completion after service duration
     // (it will be scheduled from queue to scheduled transition)
-    const service: any = appointment.service;
     await scheduleAppointmentCompletion(
       appointmentId,
       appointment.appointmentDate,
