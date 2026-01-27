@@ -6,8 +6,8 @@ import AppointmentModel from "../modules/appointment/appointment.model";
 
 // Initialize Redis connection
 export const redisConnection = new redis({
-  host: config.NODE_ENV === "development" ? "localhost" : config.REDIS_HOST,
-  port: config.NODE_ENV === "development" ? 6379 : parseInt(config.REDIS_PORT),
+  host: config.REDIS_HOST,
+  port: parseInt(config.REDIS_PORT),
   maxRetriesPerRequest: null,
 });
 
