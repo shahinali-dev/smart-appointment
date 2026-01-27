@@ -15,6 +15,9 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(1, "JWT_REFRESH_SECRET is required"),
   JWT_REFRESH_EXPIRE_IN: z.string().min(1, "JWT_REFRESH_EXPIRE_IN is required"),
   CORS_ORIGIN: z.string().min(1, "CORS_ORIGIN is required"),
+
+  REDIS_HOST: z.string().min(1, "REDIS_HOST is required"),
+  REDIS_PORT: z.string().min(1, "REDIS_PORT is required"),
 });
 
 // Parse & return validated env
@@ -38,4 +41,7 @@ export default {
   JWT_REFRESH_SECRET: env.JWT_REFRESH_SECRET,
   JWT_REFRESH_EXPIRE_IN: env.JWT_REFRESH_EXPIRE_IN,
   CORS_ORIGIN: env.CORS_ORIGIN,
+
+  REDIS_HOST: env.REDIS_HOST,
+  REDIS_PORT: env.REDIS_PORT,
 };

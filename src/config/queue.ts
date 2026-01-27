@@ -1,12 +1,13 @@
 import { Queue, Worker } from "bullmq";
 import redis from "ioredis";
+import config from ".";
 import { AppointmentStatus } from "../modules/appointment/appointment.enum";
 import AppointmentModel from "../modules/appointment/appointment.model";
 
 // Initialize Redis connection
 export const redisConnection = new redis({
-  host: process.env.REDIS_HOST || "localhost",
-  port: parseInt(process.env.REDIS_PORT || "6379"),
+  host: config.NODE_ENV === "development" ? "localhost" : config.REDIS_HOST,
+  port: parseInt(config.REDIS_PORT || "6379"),
   maxRetriesPerRequest: null,
 });
 
@@ -29,21 +30,21 @@ export const appointmentWorker = new Worker(
 
       // eslint-disable-next-line no-console
       console.log(
-        `Appointment ${appointmentId} marked as completed automatically`,
+        `Appointment ${appointmentId} marked as completed automatically`
       );
       return { success: true, appointmentId };
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error(
         `Error completing appointment ${job.data.appointmentId}:`,
-        error,
+        error
       );
       throw error;
     }
   },
   {
     connection: redisConnection,
-  },
+  }
 );
 
 // Handle worker events
