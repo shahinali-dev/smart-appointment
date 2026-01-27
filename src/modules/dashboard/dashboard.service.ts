@@ -159,20 +159,44 @@ export class DashboardService {
     return staffLoadSummary.sort((a, b) => b.loadPercentage - a.loadPercentage);
   }
 
-  // Get upcoming appointments (next 5 for today)
+  // Get upcoming appointments (today's first, then future if no today's)
   async getUpcomingAppointments(createdBy: string) {
-    const now = new Date();
+    // Get today's date range
+    const today = new Date();
+    const startOfToday = new Date(today);
+    startOfToday.setHours(0, 0, 0, 0);
 
-    const upcomingAppointments = await AppointmentModel.find({
+    const endOfToday = new Date(today);
+    endOfToday.setHours(23, 59, 59, 999);
+
+    // First, try to get today's scheduled appointments
+    let upcomingAppointments = await AppointmentModel.find({
       createdBy,
-      appointmentDate: { $gte: now },
+      appointmentDate: {
+        $gte: startOfToday,
+        $lte: endOfToday,
+      },
       status: AppointmentStatus.SCHEDULED,
       isDeleted: false,
     })
       .populate("service", "serviceName duration")
       .populate("assignedStaff", "name serviceType")
-      .sort({ appointmentDate: 1, appointmentTime: 1 })
+      .sort({ appointmentTime: 1 })
       .limit(5);
+
+    // If no appointments today, get future appointments
+    if (upcomingAppointments.length === 0) {
+      upcomingAppointments = await AppointmentModel.find({
+        createdBy,
+        appointmentDate: { $gt: endOfToday },
+        status: AppointmentStatus.SCHEDULED,
+        isDeleted: false,
+      })
+        .populate("service", "serviceName duration")
+        .populate("assignedStaff", "name serviceType")
+        .sort({ appointmentDate: 1, appointmentTime: 1 })
+        .limit(5);
+    }
 
     return upcomingAppointments;
   }
