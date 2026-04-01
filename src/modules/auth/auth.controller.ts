@@ -1,6 +1,5 @@
 import { Router } from "express";
 import httpStatus from "http-status";
-import config from "../../config";
 import { isAuth } from "../../middleware/is_auth";
 import catchAsync from "../../utils/catch_async.utils";
 import { authService } from "./auth.service";
@@ -15,14 +14,14 @@ router.post(
 
     res.cookie("accessToken", user.accessToken, {
       httpOnly: true,
-      secure: config.NODE_ENV === "production",
+      secure: true,
       sameSite: "none",
       maxAge: 1 * 24 * 60 * 60 * 1000,
     });
 
     res.cookie("refreshToken", user.refreshToken, {
       httpOnly: true,
-      secure: config.NODE_ENV === "production",
+      secure: true,
       sameSite: "none",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
