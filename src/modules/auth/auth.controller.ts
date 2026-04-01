@@ -16,14 +16,14 @@ router.post(
     res.cookie("accessToken", user.accessToken, {
       httpOnly: true,
       secure: config.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "none",
       maxAge: 1 * 24 * 60 * 60 * 1000,
     });
 
     res.cookie("refreshToken", user.refreshToken, {
       httpOnly: true,
       secure: config.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "none",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
